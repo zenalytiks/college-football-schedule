@@ -771,6 +771,6 @@ if __name__ == '__main__':
     )
     
     try:
-        cfb_app.run(debug=False)
+        cfb_app.run(host='0.0.0.0', port=8050, debug=False)
     finally:
         cfb_app.shutdown()
