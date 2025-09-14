@@ -99,10 +99,10 @@ def split_home_away(df):
 
 def read_data():
     try:
-        api_response_1 = api_instance1.get_games(year=2024)
+        api_response_1 = api_instance1.get_games(year=2025)
         df1 = pd.DataFrame([game.to_dict() for game in api_response_1],columns=['id','startDate','neutralSite','venue','homeId','homeTeam','awayId','awayTeam','homeConference','awayConference'])
     
-        api_response_2 = api_instance1.get_media(year=2024)
+        api_response_2 = api_instance1.get_media(year=2025)
         df2 = pd.DataFrame([game.to_dict() for game in api_response_2],columns=['id','outlet'])
 
         df2['outlet'] = df2['outlet'].apply(sanitize_filename)
@@ -121,7 +121,7 @@ def read_data():
     
         df_init2 = pd.merge(modified_data,df3, on="team_id")
     
-        api_response_4 = api_instance3.get_lines(year=2024)
+        api_response_4 = api_instance3.get_lines(year=2025)
         records = []
         for game in api_response_4:
             if game.to_dict()['lines']:
@@ -139,7 +139,7 @@ def read_data():
     
         add_outlet_logos(df_init3)
 
-        api_response_5 = api_instance4.get_rankings(year=2024)
+        api_response_5 = api_instance4.get_rankings(year=2025)
 
         ranks_schools = []
         for item in api_response_5:
@@ -160,7 +160,13 @@ def read_data():
         
         df_final = handle_duplicate_ids(df_init3)
 
+        df_final.to_csv('./data/cfbd_data.csv', index=False)
+
         return df_final
     
     except ApiException as e:
         print("Exception: %s\n" % e)
+
+
+if __name__ == "__main__":
+    read_data()

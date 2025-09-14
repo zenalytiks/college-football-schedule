@@ -3,6 +3,75 @@ import requests
 import base64
 session = requests.Session()
 
+def hex_to_rgb(hex_color):
+    """Convert hex color to RGB values"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def get_brightness(color):
+    """Calculate perceived brightness of a color (0-255 scale)"""
+    if isinstance(color, str):
+        r, g, b = hex_to_rgb(color)
+    else:
+        r, g, b = color
+    # Use luminance formula for perceived brightness
+    return (0.299 * r + 0.587 * g + 0.114 * b)
+
+def create_logo_filter(background_color, filter_id):
+    """Create an SVG filter to adjust logo visibility based on background color"""
+    if background_color == "#null":
+        background_color = "#FFFFFF"  # Default to white if no color provided
+    brightness = get_brightness(background_color)
+    
+    # Build the complete filter SVG string
+    filter_svg = f'<defs><filter id="{filter_id}" x="0%" y="0%" width="100%" height="100%">'
+    
+    if brightness < 128:  # Dark background
+        # For dark backgrounds, make logo lighter and add subtle glow
+        filter_svg += '''
+            <feColorMatrix type="matrix" 
+                values="1.3 0.1 0.1 0 0.1
+                        0.1 1.3 0.1 0 0.1  
+                        0.1 0.1 1.3 0 0.1
+                        0   0   0   1 0"/>
+            <feGaussianBlur stdDeviation="0.5" result="glow"/>
+            <feMerge>
+                <feMergeNode in="glow"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        '''
+    else:  # Light background
+        # For light backgrounds, make logo darker and add subtle shadow
+        filter_svg += '''
+            <feColorMatrix type="matrix" 
+                values="0.7 0   0   0 0
+                        0   0.7 0   0 0  
+                        0   0   0.7 0 0
+                        0   0   0   1 0"/>
+            <feDropShadow dx="1" dy="1" stdDeviation="0.5" flood-color="rgba(0,0,0,0.3)"/>
+        '''
+    
+    # Handle edge case where background is very close to middle brightness
+    if 100 <= brightness <= 155:
+        # Add a contrasting outline for better visibility
+        outline_color = '1' if brightness > 127 else '0'
+        filter_svg += f'''
+            <feMorphology operator="dilate" radius="1" result="outline"/>
+            <feColorMatrix in="outline" type="matrix" 
+                values="0 0 0 0 {outline_color}
+                        0 0 0 0 {outline_color}  
+                        0 0 0 0 {outline_color}
+                        0 0 0 1 0" result="outline_colored"/>
+            <feMerge>
+                <feMergeNode in="outline_colored"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        '''
+    
+    filter_svg += '</filter></defs>'
+    
+    return draw.Raw(filter_svg)
+
 def generate_custom_scoreboard(team1_name, team1_logo_url, team1_text_color, team2_name, team2_logo_url, team2_text_color,
                               venue, score_line, 
                               team1_name_bg_color, team1_logo_bg_color,
@@ -25,6 +94,12 @@ def generate_custom_scoreboard(team1_name, team1_logo_url, team1_text_color, tea
     d.width = '100%'
     d.height = '100%'
     
+    # Create filters for logo visibility
+    team1_filter = create_logo_filter(team1_logo_bg_color, "team1_logo_filter")
+    team2_filter = create_logo_filter(team2_logo_bg_color, "team2_logo_filter")
+    d.append(team1_filter)
+    d.append(team2_filter)
+    
     # Team 1 name background
     d.append(draw.Rectangle(0, 0, half_width, team_section_height, fill=team1_name_bg_color))
     
@@ -40,23 +115,33 @@ def generate_custom_scoreboard(team1_name, team1_logo_url, team1_text_color, tea
     # Team 1 logo background (full height on left side)
     d.append(draw.Rectangle(0, 0, logo_width, height, fill=team1_logo_bg_color))
     
-    # Team 1 logo image
+    # Team 1 logo image with filter
     if team1_logo_url:
-        response1 = session.get(team1_logo_url, timeout=3)
-        base64_data1 = base64.b64encode(response1.content).decode('utf-8')
-        team1_logo = draw.Image(0, 0, logo_width, height, path=f"data:image/png;base64,{base64_data1}")
-        d.append(team1_logo)
+        try:
+            response1 = session.get(team1_logo_url, timeout=3)
+            base64_data1 = base64.b64encode(response1.content).decode('utf-8')
+            team1_logo = draw.Image(0, 0, logo_width, height, 
+                                  path=f"data:image/png;base64,{base64_data1}",
+                                  filter="url(#team1_logo_filter)")
+            d.append(team1_logo)
+        except Exception as e:
+            print(f"Error loading team1 logo: {e}")
     
     # Team 2 logo background (full height on right side)
     team2_logo_x = width - logo_width
     d.append(draw.Rectangle(team2_logo_x, 0, logo_width, height, fill=team2_logo_bg_color))
     
-    # Team 2 logo image
+    # Team 2 logo image with filter
     if team2_logo_url:
-        response2 = session.get(team2_logo_url,timeout=3)
-        base64_data2 = base64.b64encode(response2.content).decode('utf-8')
-        team2_logo = draw.Image(team2_logo_x, 0, logo_width, height, path=f"data:image/png;base64,{base64_data2}")
-        d.append(team2_logo)
+        try:
+            response2 = session.get(team2_logo_url, timeout=3)
+            base64_data2 = base64.b64encode(response2.content).decode('utf-8')
+            team2_logo = draw.Image(team2_logo_x, 0, logo_width, height, 
+                                  path=f"data:image/png;base64,{base64_data2}",
+                                  filter="url(#team2_logo_filter)")
+            d.append(team2_logo)
+        except Exception as e:
+            print(f"Error loading team2 logo: {e}")
     
     # Calculate font sizes with better scaling and minimums
     team_font_size = max(10, min(20, width * 0.03, team_section_height * 0.5))
