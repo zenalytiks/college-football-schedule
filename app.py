@@ -191,7 +191,9 @@ class CFBGuideApp:
         self.app = dash.Dash(
             __name__,
             external_stylesheets=[dbc.themes.BOOTSTRAP],
-            meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=0.5"}]
+            meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=0.5"}],
+            routes_pathname_prefix='/college-football-schedule/',
+            requests_pathname_prefix='/college-football-schedule/'
         )
         self.server = self.app.server
         
@@ -731,9 +733,9 @@ class CFBGuideApp:
             
             return result
 
-    def run(self, debug=True):
+    def run(self, debug=False, host='0.0.0.0', port=8050):
         """Run the application."""
-        self.app.run(debug=debug)
+        self.app.run(debug=debug, host=host, port=port)
 
     def clear_cache(self):
         """Clear all caches if needed."""
@@ -771,6 +773,6 @@ if __name__ == '__main__':
     )
     
     try:
-        cfb_app.run(debug=False)
+        cfb_app.run()
     finally:
         cfb_app.shutdown()
