@@ -732,9 +732,9 @@ class CFBGuideApp:
             
             return result
 
-    def run(self, debug=False, host='0.0.0.0', port=8050):
+    def run(self, debug=False):
         """Run the application."""
-        self.app.run(debug=debug, host=host, port=port)
+        self.app.run(debug=debug)
 
     def clear_cache(self):
         """Clear all caches if needed."""
