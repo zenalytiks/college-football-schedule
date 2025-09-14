@@ -192,8 +192,7 @@ class CFBGuideApp:
             __name__,
             external_stylesheets=[dbc.themes.BOOTSTRAP],
             meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=0.5"}],
-            routes_pathname_prefix='/college-football-schedule/',
-            requests_pathname_prefix='/college-football-schedule/'
+            url_base_pathname='/college-football-schedule/'
         )
         self.server = self.app.server
         
