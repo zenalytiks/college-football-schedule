@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import dash
-from dash import html, dcc, Input, Output
+from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 from datetime import datetime
 from dash_calendar_timeline import DashCalendarTimeline
@@ -157,7 +157,7 @@ class ServerCache:
                     print(f"✓ Memory cache cleared: {cache_count} entries removed")
                     
         except Exception as e:
-            print(f"❌ Cache clear error: {e}")
+            print(f"⚠ Cache clear error: {e}")
             import traceback
             traceback.print_exc()
 
@@ -206,6 +206,7 @@ class CFBGuideApp:
         
         self.df = self._load_and_prepare_data()
         self.min_date, self.max_date = self._get_date_bounds()
+        self.available_dates = self._get_available_dates()
         
         # Threading configuration
         self.max_workers = max_workers
@@ -261,6 +262,19 @@ class CFBGuideApp:
         self.server_cache.set(bounds_cache_key, bounds)
         return bounds
 
+    def _get_available_dates(self):
+        """Get list of available dates from the dataset."""
+        available_dates_cache_key = "available_dates"
+        cached_dates = self.server_cache.get(available_dates_cache_key)
+        
+        if cached_dates is not None:
+            return cached_dates
+        
+        # Get unique dates from the dataset
+        available_dates = sorted(self.df['start_date'].dt.date.unique())
+        self.server_cache.set(available_dates_cache_key, available_dates)
+        return available_dates
+
     def _setup_layout(self):
         """Setup the application layout with college football dark theme."""
         self.app.layout = dbc.Container([
@@ -277,46 +291,55 @@ class CFBGuideApp:
                 fluid=True
             ),
             
-            # Cache status indicator
-            dbc.Alert([
-                html.I(className="fas fa-database me-2"),
-                html.Span("Server-side caching enabled", className="fw-bold"),
-                html.Span(f" ({self.server_cache.cache_type.upper()})", className="text-muted ms-2")
-            ], color="info", className="mt-2 mb-2", dismissable=True),
-            
             # Main content container with dark theme
             dbc.Container([
-                # Date picker with enhanced styling
+                # Date picker with enhanced styling and loading spinner
                 dbc.Stack([
-                            html.Label(
-                                "Select Game Date", 
-                                className="text-light fw-bold mb-2",
-                                style={'color': '#f8f9fa', 'font-size': '1.1rem','padding-right': '50px'}
-                            ),
-                            dcc.DatePickerSingle(
-                                id='date-picker',
-                                min_date_allowed=datetime(self.min_date.year, self.min_date.month, self.min_date.day),
-                                max_date_allowed=datetime(self.max_date.year, self.max_date.month, self.max_date.day),
-                                initial_visible_month=datetime(self.min_date.year, self.min_date.month, self.min_date.day),
-                                date=CURRENT_DATE,
-                                style={
-                                    'zIndex': 100,
-                                    'background-color': '#2c3e50',
-                                    'border': '2px solid #27ae60',
-                                    'border-radius': '8px',
-                                    'box-shadow': '0 4px 12px rgba(0,0,0,0.3)',
-                                },
-                            ),
-                        ], 
-                        className="p-3 rounded shadow-sm mb-4",
+                    html.Label(
+                        "Select Game Date", 
+                        className="text-light fw-bold mb-2",
+                        style={'color': '#f8f9fa', 'font-size': '1.1rem','padding-right': '50px'}
+                    ),
+                    dcc.DatePickerSingle(
+                        id='date-picker',
+                        min_date_allowed=datetime(self.min_date.year, self.min_date.month, self.min_date.day),
+                        max_date_allowed=datetime(self.max_date.year, self.max_date.month, self.max_date.day),
+                        initial_visible_month=datetime(self.min_date.year, self.min_date.month, self.min_date.day),
+                        date=CURRENT_DATE,
+                        disabled_days=[date for date in pd.date_range(self.min_date, self.max_date).date 
+                                     if date not in self.available_dates],
                         style={
-                            'background': 'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)',
+                            'zIndex': 100,
+                            'background-color': '#2c3e50',
                             'border': '2px solid #27ae60',
-                            'box-shadow': '0 6px 20px rgba(0,0,0,0.4)'
+                            'border-radius': '8px',
+                            'box-shadow': '0 4px 12px rgba(0,0,0,0.3)',
                         },
-                        direction='horizontal',
-                        gap=3,
-                ),
+                    ),
+                    # Loading spinner
+                    dbc.Spinner(
+                        id="loading-spinner",
+                        # children=[],
+                        # size="md",
+                        color="success",
+                        # type="border",
+                        # fullscreen=False,
+                        spinner_style={
+                            "width": "3rem", 
+                            "height": "3rem",
+                            "margin-left": "15px"
+                        }
+                    ),
+                ], 
+                className="p-3 rounded shadow-sm mb-4",
+                style={
+                    'background': 'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)',
+                    'border': '2px solid #27ae60',
+                    'box-shadow': '0 6px 20px rgba(0,0,0,0.4)'
+                },
+                direction='horizontal',
+                gap=3,
+            ),
                 
                 # Timeline container with enhanced styling
                 dbc.Row([
@@ -625,17 +648,30 @@ class CFBGuideApp:
 
     def _get_cached_schedule_data(self, date_value: str, dimensions: Dict) -> Optional[Tuple]:
         """Get cached schedule data for a specific date."""
-        # Create cache key based on date and dimensions
-        cache_key = f"schedule_data_{date_value}_{hash(str(dimensions))}"
+        # Create cache key based on date only (not including browser-specific info)
+        # This ensures the same data can be shared across browsers
+        cache_key = f"schedule_data_{date_value}_{hash(str(sorted(dimensions.items()) if dimensions else {}))}"
         return self.server_cache.get(cache_key)
 
     def _set_cached_schedule_data(self, date_value: str, dimensions: Dict, schedule_data: Tuple) -> None:
         """Cache schedule data for a specific date."""
-        cache_key = f"schedule_data_{date_value}_{hash(str(dimensions))}"
+        # Create cache key based on date only (not including browser-specific info)
+        # This ensures the same data can be shared across browsers
+        cache_key = f"schedule_data_{date_value}_{hash(str(sorted(dimensions.items()) if dimensions else {}))}"
         self.server_cache.set(cache_key, schedule_data)
 
     def _setup_callbacks(self):
         """Setup application callbacks."""
+        # Loading spinner callback
+        # @self.app.callback(
+        #     Output("loading-spinner", "children"),
+        #     [Input('date-picker', 'date')],
+        #     [State("loading-spinner", "children")]
+        # )
+        # def show_loading_spinner(date_value, current_children):
+        #     """Show/hide loading spinner based on callback execution."""
+        #     return current_children
+
         @self.app.callback(
             [
                 Output('schedule', 'groups'),
@@ -645,7 +681,8 @@ class CFBGuideApp:
                 Output('schedule', 'customGroupsContent'),
                 Output('schedule', 'customItemsContent'),
                 Output('schedule', 'itemsStyle'),
-                Output('schedule', 'groupsStyle')
+                Output('schedule', 'groupsStyle'),
+                Output('loading-spinner', 'children')
             ],
             [
                 Input('schedule', 'itemClickData'),
@@ -669,7 +706,7 @@ class CFBGuideApp:
             
             # Early return if no data
             if df_filtered.empty:
-                empty_result = ([], [], 0, 0, [], [], {}, {})
+                empty_result = ([], [], 0, 0, [], [], {}, {}, "")
                 self._set_cached_schedule_data(date_value, dimensions or {}, empty_result)
                 return empty_result
             
@@ -721,7 +758,7 @@ class CFBGuideApp:
                 df_filtered['start_time_ms'].min(),
                 df_filtered['end_time_ms'].max(),
                 custom_groups_content, custom_items_content,
-                custom_styles, custom_styles
+                custom_styles, custom_styles, ""
             ]
             
             # Cache the result for future requests
