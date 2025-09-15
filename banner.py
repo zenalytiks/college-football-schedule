@@ -78,6 +78,34 @@ def generate_custom_scoreboard(team1_name, team1_logo_url, team1_text_color, tea
                               team2_name_bg_color, team2_logo_bg_color,
                               venue_bg_color, venue_text_color, score_bg_color, score_text_color,
                               width=400, height=60):
+    
+    if team1_text_color == "#null":
+        team1_text_color = "#FFFFFF"
+    if team2_text_color == "#null":
+        team2_text_color = "#FFFFFF"
+
+    if get_brightness(team1_text_color) < 128 and team1_name_bg_color == "#null":
+        team1_text_color = "#FFFFFF"
+        venue_text_color = "#FFFFFF"
+        score_text_color = "#FFFFFF"
+    if get_brightness(team2_text_color) < 128 and team2_name_bg_color == "#null":
+        team2_text_color = "#FFFFFF"
+        venue_text_color = "#FFFFFF"
+        score_text_color = "#FFFFFF"
+
+    if venue_text_color == "#null":
+        venue_text_color = "#FFFFFF"
+    if score_text_color == "#null":
+        score_text_color = "#FFFFFF"
+    if team1_name_bg_color == "#null":
+        team1_name_bg_color = "#000000"
+    if team2_name_bg_color == "#null":
+        team2_name_bg_color = "#000000"
+    if venue_bg_color == "#null":
+        venue_bg_color = "#000000"
+    if score_bg_color == "#null":
+        score_bg_color = "#000000"
+    
     # Calculate proportions based on provided dimensions
     half_width = width // 2
     team_section_height = height // 2

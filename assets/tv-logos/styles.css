@@ -7,3 +7,12 @@
    color: #f8f9fa;
    background: transparent !important;
 }
+
+nav .container-fluid {
+  padding: 20px;
+}
+nav .navbar-brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}

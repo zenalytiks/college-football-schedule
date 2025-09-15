@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import dash
-from dash import html, dcc, Input, Output, State
+from dash import html, dcc, Input, Output
 import dash_bootstrap_components as dbc
 from datetime import datetime
 from dash_calendar_timeline import DashCalendarTimeline
@@ -9,12 +9,6 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from threading import Lock
-import pickle
-import os
-from functools import wraps
-import redis
-import json
-from typing import Optional, Dict, Any, Tuple, List
 
 from banner import generate_custom_scoreboard
 import base64
@@ -22,172 +16,11 @@ import base64
 from datetime import datetime
 
 # Get current date
-CURRENT_DATE = datetime.now()
-
-# Server-side cache configuration
-CACHE_TYPE = "redis"  # Options: "file", "redis", "memory"
-CACHE_DIR = "./cache"
-CACHE_TTL = 3600  # 1 hour in seconds
-REDIS_URL = "redis://localhost:6379/0"  # Configure as needed
-
-
-class ServerCache:
-    """Server-side cache implementation supporting multiple backends."""
-    
-    def __init__(self, cache_type: str = "redis", cache_dir: str = "./cache", 
-                 ttl: int = 3600, redis_url: str = None):
-        self.cache_type = cache_type
-        self.cache_dir = cache_dir
-        self.ttl = ttl
-        self.redis_client = None
-        self.memory_cache = {}
-        self.memory_cache_timestamps = {}
-        self.cache_lock = Lock()
-        
-        if cache_type == "file" and not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-        elif cache_type == "redis":
-            try:
-                import redis
-                self.redis_client = redis.from_url(redis_url or REDIS_URL)
-                self.redis_client.ping()  # Test connection
-            except Exception as e:
-                print(f"Redis connection failed, falling back to file cache: {e}")
-                self.cache_type = "file"
-    
-    def _get_cache_key(self, key: str) -> str:
-        """Generate a standardized cache key."""
-        return f"cfb_app_{hashlib.md5(key.encode()).hexdigest()}"
-    
-    def _is_expired(self, timestamp: float) -> bool:
-        """Check if cache entry is expired."""
-        return time.time() - timestamp > self.ttl
-    
-    def get(self, key: str) -> Optional[Any]:
-        """Get value from cache."""
-        cache_key = self._get_cache_key(key)
-        
-        try:
-            if self.cache_type == "redis" and self.redis_client:
-                data = self.redis_client.get(cache_key)
-                if data:
-                    cached_data = pickle.loads(data)
-                    if not self._is_expired(cached_data.get('timestamp', 0)):
-                        return cached_data.get('value')
-                    else:
-                        self.redis_client.delete(cache_key)
-                        
-            elif self.cache_type == "file":
-                cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
-                if os.path.exists(cache_file):
-                    with open(cache_file, 'rb') as f:
-                        cached_data = pickle.load(f)
-                    if not self._is_expired(cached_data.get('timestamp', 0)):
-                        return cached_data.get('value')
-                    else:
-                        os.remove(cache_file)
-                        
-            elif self.cache_type == "memory":
-                with self.cache_lock:
-                    if cache_key in self.memory_cache:
-                        timestamp = self.memory_cache_timestamps.get(cache_key, 0)
-                        if not self._is_expired(timestamp):
-                            return self.memory_cache[cache_key]
-                        else:
-                            del self.memory_cache[cache_key]
-                            del self.memory_cache_timestamps[cache_key]
-                            
-        except Exception as e:
-            print(f"Cache get error for key {key}: {e}")
-            
-        return None
-    
-    def set(self, key: str, value: Any) -> None:
-        """Set value in cache."""
-        cache_key = self._get_cache_key(key)
-        cached_data = {
-            'value': value,
-            'timestamp': time.time()
-        }
-        
-        try:
-            if self.cache_type == "redis" and self.redis_client:
-                self.redis_client.setex(
-                    cache_key, 
-                    self.ttl, 
-                    pickle.dumps(cached_data)
-                )
-                
-            elif self.cache_type == "file":
-                cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
-                with open(cache_file, 'wb') as f:
-                    pickle.dump(cached_data, f)
-                    
-            elif self.cache_type == "memory":
-                with self.cache_lock:
-                    self.memory_cache[cache_key] = value
-                    self.memory_cache_timestamps[cache_key] = time.time()
-                    
-        except Exception as e:
-            print(f"Cache set error for key {key}: {e}")
-    
-    def clear(self) -> None:
-        """Clear all cache entries."""
-        try:
-            if self.cache_type == "redis" and self.redis_client is not None:
-                keys = self.redis_client.keys("cfb_app_*")
-                if keys:
-                    self.redis_client.delete(*keys)
-                print(f"✓ Redis cache cleared: {len(keys)} keys removed")
-                    
-            elif self.cache_type == "file":
-                if os.path.exists(self.cache_dir):
-                    files_removed = 0
-                    for filename in os.listdir(self.cache_dir):
-                        if filename.startswith("cfb_app_") and filename.endswith(".pkl"):
-                            os.remove(os.path.join(self.cache_dir, filename))
-                            files_removed += 1
-                    print(f"✓ File cache cleared: {files_removed} files removed")
-                        
-            elif self.cache_type == "memory":
-                with self.cache_lock:
-                    cache_count = len(self.memory_cache)
-                    self.memory_cache.clear()
-                    self.memory_cache_timestamps.clear()
-                    print(f"✓ Memory cache cleared: {cache_count} entries removed")
-                    
-        except Exception as e:
-            print(f"⚠ Cache clear error: {e}")
-            import traceback
-            traceback.print_exc()
-
-
-def cache_result(cache_instance: ServerCache, key_func=None):
-    """Decorator for caching function results."""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Generate cache key
-            if key_func:
-                cache_key = key_func(*args, **kwargs)
-            else:
-                cache_key = f"{func.__name__}_{hash(str(args) + str(sorted(kwargs.items())))}"
-            
-            # Try to get from cache
-            cached_result = cache_instance.get(cache_key)
-            if cached_result is not None:
-                return cached_result
-            
-            # Execute function and cache result
-            result = func(*args, **kwargs)
-            cache_instance.set(cache_key, result)
-            return result
-        return wrapper
-    return decorator
+CURRENT_DATE = datetime.now().date()
 
 
 class CFBGuideApp:
-    def __init__(self, max_workers=4, cache_type="redis", cache_ttl=3600):
+    def __init__(self, max_workers=8):
         self.app = dash.Dash(
             __name__,
             external_stylesheets=[dbc.themes.BOOTSTRAP],
@@ -195,15 +28,6 @@ class CFBGuideApp:
             url_base_pathname='/college-football-schedule/'
         )
         self.server = self.app.server
-        
-        # Initialize server-side cache
-        self.server_cache = ServerCache(
-            cache_type=cache_type,
-            cache_dir=CACHE_DIR,
-            ttl=cache_ttl,
-            redis_url=REDIS_URL
-        )
-        
         self.df = self._load_and_prepare_data()
         self.min_date, self.max_date = self._get_date_bounds()
         self.available_dates = self._get_available_dates()
@@ -212,11 +36,11 @@ class CFBGuideApp:
         self.max_workers = max_workers
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         
-        # Thread-safe cache for SVG scoreboards (in-memory for performance)
+        # Thread-safe cache for SVG scoreboards
         self._scoreboard_cache = {}
         self._cache_lock = Lock()
         
-        # Pre-computation cache for game data processing (in-memory for performance)
+        # Pre-computation cache for game data processing
         self._game_data_cache = {}
         self._game_data_lock = Lock()
         
@@ -225,15 +49,6 @@ class CFBGuideApp:
 
     def _load_and_prepare_data(self):
         """Load and prepare the data with optimized column operations."""
-        # Check if processed data is cached
-        data_cache_key = "processed_dataframe"
-        cached_df = self.server_cache.get(data_cache_key)
-        
-        if cached_df is not None:
-            print("Loading processed data from cache")
-            return cached_df
-        
-        print("Processing raw data...")
         # df = read_data() # Read data from API
         df = pd.read_csv('./data/cfbd_data.csv') # Read data from local file
         df['start_date'] = pd.to_datetime(df['start_date'])
@@ -243,36 +58,18 @@ class CFBGuideApp:
         df['start_time_ms'] = df['start_date'].astype("int64") // 10**6
         df['end_time_ms'] = df['end_date'].astype("int64") // 10**6
         
-        # Cache the processed dataframe
-        self.server_cache.set(data_cache_key, df)
-        print("Processed data cached")
-        
         return df
 
     def _get_date_bounds(self):
         """Get min and max dates from the dataset."""
-        bounds_cache_key = "date_bounds"
-        cached_bounds = self.server_cache.get(bounds_cache_key)
-        
-        if cached_bounds is not None:
-            return cached_bounds
-        
         date_col = self.df['start_date']
-        bounds = (date_col.min(), date_col.max())
-        self.server_cache.set(bounds_cache_key, bounds)
-        return bounds
-
+        return date_col.min(), date_col.max()
+    
     def _get_available_dates(self):
         """Get list of available dates from the dataset."""
-        available_dates_cache_key = "available_dates"
-        cached_dates = self.server_cache.get(available_dates_cache_key)
-        
-        if cached_dates is not None:
-            return cached_dates
         
         # Get unique dates from the dataset
         available_dates = sorted(self.df['start_date'].dt.date.unique())
-        self.server_cache.set(available_dates_cache_key, available_dates)
         return available_dates
 
     def _setup_layout(self):
@@ -305,7 +102,7 @@ class CFBGuideApp:
                         min_date_allowed=datetime(self.min_date.year, self.min_date.month, self.min_date.day),
                         max_date_allowed=datetime(self.max_date.year, self.max_date.month, self.max_date.day),
                         initial_visible_month=datetime(self.min_date.year, self.min_date.month, self.min_date.day),
-                        date=CURRENT_DATE,
+                        date=min(self.available_dates, key=lambda d: abs(d - CURRENT_DATE)),
                         disabled_days=[date for date in pd.date_range(self.min_date, self.max_date).date 
                                      if date not in self.available_dates],
                         style={
@@ -319,16 +116,22 @@ class CFBGuideApp:
                     # Loading spinner
                     dbc.Spinner(
                         id="loading-spinner",
-                        # children=[],
-                        # size="md",
-                        color="success",
-                        # type="border",
-                        # fullscreen=False,
-                        spinner_style={
-                            "width": "3rem", 
-                            "height": "3rem",
-                            "margin-left": "15px"
-                        }
+                        color="success"
+                    ),
+
+                    html.Span("ⓘ", id="tooltip-target",
+                        className="fs-1 fw-bold mb-0 ms-auto",
+                        style={'color': '#188754', 'cursor': 'pointer', 'padding-left': '10px'}
+                    ),
+                    dbc.Tooltip(
+                        [
+                            html.P("1. Select a date to view the game schedule. Dates without games are disabled.",className='m-0'),
+                            html.Br(),
+                            html.P("2. Games are grouped by their broadcasting network.",className='m-0'),
+                            html.Br(),
+                            html.P("3. Zoom and pan the timeline to explore the schedule. Hold Ctrl while scrolling with mouse wheel to zoom in.",className='m-0')
+                        ],
+                        target="tooltip-target",
                     ),
                 ], 
                 className="p-3 rounded shadow-sm mb-4",
@@ -646,32 +449,20 @@ class CFBGuideApp:
         
         return items, custom_items_content
 
-    def _get_cached_schedule_data(self, date_value: str, dimensions: Dict) -> Optional[Tuple]:
-        """Get cached schedule data for a specific date."""
-        # Create cache key based on date only (not including browser-specific info)
-        # This ensures the same data can be shared across browsers
-        cache_key = f"schedule_data_{date_value}_{hash(str(sorted(dimensions.items()) if dimensions else {}))}"
-        return self.server_cache.get(cache_key)
-
-    def _set_cached_schedule_data(self, date_value: str, dimensions: Dict, schedule_data: Tuple) -> None:
-        """Cache schedule data for a specific date."""
-        # Create cache key based on date only (not including browser-specific info)
-        # This ensures the same data can be shared across browsers
-        cache_key = f"schedule_data_{date_value}_{hash(str(sorted(dimensions.items()) if dimensions else {}))}"
-        self.server_cache.set(cache_key, schedule_data)
-
     def _setup_callbacks(self):
         """Setup application callbacks."""
-        # Loading spinner callback
-        # @self.app.callback(
-        #     Output("loading-spinner", "children"),
-        #     [Input('date-picker', 'date')],
-        #     [State("loading-spinner", "children")]
-        # )
-        # def show_loading_spinner(date_value, current_children):
-        #     """Show/hide loading spinner based on callback execution."""
-        #     return current_children
 
+        # Loading spinner callback
+        @self.app.callback(
+            Output("loading-spinner", "spinner_style", allow_duplicate=True),
+            [Input('date-picker', 'date')],
+            prevent_initial_call='initial_duplicate',
+        )
+        def show_loading_spinner(date_value):
+            """Show/hide loading spinner based on callback execution."""
+            if date_value:
+                return {"display": "block"}
+            return {"display": "none"}
         @self.app.callback(
             [
                 Output('schedule', 'groups'),
@@ -682,7 +473,7 @@ class CFBGuideApp:
                 Output('schedule', 'customItemsContent'),
                 Output('schedule', 'itemsStyle'),
                 Output('schedule', 'groupsStyle'),
-                Output('loading-spinner', 'children')
+                Output('loading-spinner', 'spinner_style')
             ],
             [
                 Input('schedule', 'itemClickData'),
@@ -693,22 +484,12 @@ class CFBGuideApp:
         def update_schedule(click_data, dimensions, date_value):
             start_time = time.time()
             
-            # Try to get cached data first
-            cached_data = self._get_cached_schedule_data(date_value, dimensions or {})
-            if cached_data is not None:
-                print(f"Schedule data loaded from cache for date: {date_value}")
-                return cached_data
-            
-            print(f"Processing schedule data for date: {date_value}")
-            
             # Filter data by selected date
             df_filtered = self.df[self.df['start_date'].dt.date == pd.to_datetime(date_value[:10]).date()].copy()
             
             # Early return if no data
             if df_filtered.empty:
-                empty_result = ([], [], 0, 0, [], [], {}, {}, "")
-                self._set_cached_schedule_data(date_value, dimensions or {}, empty_result)
-                return empty_result
+                return [], [], 0, 0, [], [], {}, {}, {'display': 'none'}
             
             # Initialize output lists
             groups = []
@@ -752,22 +533,16 @@ class CFBGuideApp:
             # Define styles
             custom_styles = {'height': '100%', 'width': '100%'}
             
-            # Prepare result tuple
-            result = [
+            end_time = time.time()
+            print(f"Schedule update completed in {end_time - start_time:.2f} seconds with {len(games_data)} games")
+            
+            return [
                 groups, items,
                 df_filtered['start_time_ms'].min(),
                 df_filtered['end_time_ms'].max(),
                 custom_groups_content, custom_items_content,
-                custom_styles, custom_styles, ""
+                custom_styles, custom_styles, {'display': 'none'}
             ]
-            
-            # Cache the result for future requests
-            self._set_cached_schedule_data(date_value, dimensions or {}, result)
-            
-            end_time = time.time()
-            print(f"✓ Schedule update completed in {end_time - start_time:.2f} seconds with {len(games_data)} games (CACHED for future users)")
-            
-            return result
 
     def run(self, debug=False):
         """Run the application."""
@@ -779,7 +554,6 @@ class CFBGuideApp:
             self._scoreboard_cache.clear()
         with self._game_data_lock:
             self._game_data_cache.clear()
-        self.server_cache.clear()
 
     def shutdown(self):
         """Clean shutdown of thread pool."""
@@ -793,21 +567,7 @@ class CFBGuideApp:
 
 # Create and run the application
 if __name__ == '__main__':
-    # Configuration options for caching
-    CACHE_CONFIG = {
-        'cache_type': CACHE_TYPE,  # "file", "redis", or "memory"
-        'cache_ttl': CACHE_TTL,    # Cache TTL in seconds
-        'max_workers': 4           # Number of worker threads
-    }
-    
-    print(f"Starting CFB App with {CACHE_CONFIG['cache_type'].upper()} caching (TTL: {CACHE_CONFIG['cache_ttl']}s)")
-    
-    cfb_app = CFBGuideApp(
-        max_workers=CACHE_CONFIG['max_workers'],
-        cache_type=CACHE_CONFIG['cache_type'],
-        cache_ttl=CACHE_CONFIG['cache_ttl']
-    )
-    
+    cfb_app = CFBGuideApp(max_workers=8)  # Adjust max_workers based on your CPU cores
     try:
         cfb_app.run()
     finally:
