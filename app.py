@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import dash
-from dash import html, dcc, Input, Output
+from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 from datetime import datetime
 from dash_calendar_timeline import DashCalendarTimeline
@@ -27,6 +27,7 @@ class CFBGuideApp:
             meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=0.3"}],
             url_base_pathname='/college-football-schedule/'
         )
+        self.app.title = "College Football"
         self.server = self.app.server
         self.df = self._load_and_prepare_data()
         self.min_date, self.max_date = self._get_date_bounds()
@@ -43,6 +44,10 @@ class CFBGuideApp:
         # Pre-computation cache for game data processing
         self._game_data_cache = {}
         self._game_data_lock = Lock()
+        
+        # Store dimensions for reuse
+        self._cached_dimensions = {}
+        self._dimensions_lock = Lock()
         
         self._setup_layout()
         self._setup_callbacks()
@@ -88,6 +93,9 @@ class CFBGuideApp:
                 fluid=True
             ),
             
+            # Hidden store for dimensions
+            dcc.Store(id='dimensions-store', storage_type='memory'),
+            
             # Main content container with dark theme
             dbc.Container([
                 # Date picker with enhanced styling and loading spinner
@@ -119,7 +127,7 @@ class CFBGuideApp:
                         color="success"
                     ),
 
-                    html.Span("ⓘ", id="tooltip-target",
+                    html.Span("ℹ", id="tooltip-target",
                         className="fs-1 fw-bold mb-0 ms-auto",
                         style={'color': '#188754', 'cursor': 'pointer', 'padding-left': '10px'}
                     ),
@@ -129,7 +137,7 @@ class CFBGuideApp:
                             html.Br(),
                             html.P("2. Games are grouped by their broadcasting network.",className='m-0'),
                             html.Br(),
-                            html.P("3. Zoom and pan the timeline to explore the schedule. Hold Ctrl while scrolling with mouse wheel to zoom in.",className='m-0')
+                            html.P("3. Use left and right arrow keys to scroll across the timeline or use right-click to hold and drag the timeline.",className='m-0')
                         ],
                         target="tooltip-target",
                     ),
@@ -163,12 +171,13 @@ class CFBGuideApp:
                                 sidebarWidth=120,
                                 lineHeight=65,
                                 itemHeightRatio=1,
-                                minZoom=8 * 60 * 60 * 1000,
-                                disableScroll=False,
+                                minZoom=10 * 60 * 60 * 1000,
+                                maxZoom=10 * 60 * 60 * 1000,
                                 canMove=False,
                                 canResize=False,
                                 canChangeGroup=False,
                                 sidebarHeaderVariant='left',
+                                dateHeaderLabelFormat='HH:00',
                                 sidebarHeaderContent=html.H4(
                                     "📡 Network", 
                                     className='text-center text-light fw-bold',
@@ -452,6 +461,25 @@ class CFBGuideApp:
     def _setup_callbacks(self):
         """Setup application callbacks."""
 
+        # Separate callback to capture dimensions only on first load
+        @self.app.callback(
+            Output('dimensions-store', 'data'),
+            [Input('schedule', 'itemDimensions')],
+            [State('dimensions-store', 'data')],
+            prevent_initial_call=False
+        )
+        def update_dimensions_store(item_dimensions, current_dimensions):
+            """Update dimensions store only if we have new dimensions and they're different."""
+            if item_dimensions and item_dimensions != current_dimensions:
+                # print(f"Dimensions updated: {item_dimensions}")
+                # Update cached dimensions
+                with self._dimensions_lock:
+                    self._cached_dimensions = item_dimensions
+                return item_dimensions
+            
+            # Return current dimensions to prevent unnecessary updates
+            return current_dimensions
+
         # Loading spinner callback
         @self.app.callback(
             Output("loading-spinner", "spinner_style", allow_duplicate=True),
@@ -463,6 +491,8 @@ class CFBGuideApp:
             if date_value:
                 return {"display": "block"}
             return {"display": "none"}
+        
+        # Main schedule update callback - now uses State for dimensions instead of Input
         @self.app.callback(
             [
                 Output('schedule', 'groups'),
@@ -476,13 +506,18 @@ class CFBGuideApp:
                 Output('loading-spinner', 'spinner_style')
             ],
             [
-                Input('schedule', 'itemClickData'),
-                Input('schedule', 'itemDimensions'),
                 Input('date-picker', 'date')
+            ],
+            [
+                State('schedule', 'itemClickData'),
+                State('dimensions-store', 'data')
             ]
         )
-        def update_schedule(click_data, dimensions, date_value):
+        def update_schedule(date_value, click_data, stored_dimensions):
             start_time = time.time()
+            
+            # Use stored dimensions or fallback to cached/default dimensions
+            dimensions = stored_dimensions or self._cached_dimensions
             
             # Filter data by selected date
             df_filtered = self.df[self.df['start_date'].dt.date == pd.to_datetime(date_value[:10]).date()].copy()
@@ -539,7 +574,7 @@ class CFBGuideApp:
             return [
                 groups, items,
                 df_filtered['start_time_ms'].min(),
-                df_filtered['end_time_ms'].max(),
+                df_filtered['start_time_ms'].min() + 10 * 60 * 60 * 1000,
                 custom_groups_content, custom_items_content,
                 custom_styles, custom_styles, {'display': 'none'}
             ]

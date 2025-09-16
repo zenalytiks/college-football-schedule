@@ -177,7 +177,7 @@ def generate_custom_scoreboard(team1_name, team1_logo_url, team1_text_color, tea
     score_font_size = max(8, min(16, width * 0.025, score_height * 0.8))
     
     # Team 1 name (positioned after logo with proper spacing)
-    team1_available_width = half_width - logo_width - 20  # 20px total padding
+    team1_available_width = half_width - logo_width  # 20px total padding
     team1_text_x = logo_width + 10
     team1_text_y = team_section_height // 2 + team_font_size // 3
     
@@ -192,7 +192,7 @@ def generate_custom_scoreboard(team1_name, team1_logo_url, team1_text_color, tea
                       fill=team1_text_color))
     
     # Team 2 name with VS prefix (positioned before logo with proper spacing)
-    team2_available_width = half_width - logo_width - 20  # 20px total padding
+    team2_available_width = half_width - logo_width  # 20px total padding
     team2_text_x = half_width + 10
     team2_text_y = team_section_height // 2 + team_font_size // 3
     

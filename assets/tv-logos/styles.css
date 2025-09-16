@@ -16,3 +16,15 @@ nav .navbar-brand {
   left: 50%;
   transform: translateX(-50%);
 }
+
+.react-calendar-timeline .rct-dateHeader {
+  pointer-events: none;
+}
+
+.rct-day-6 {
+  background: transparent !important;
+}
+
+.rct-day-0 {
+  background: transparent !important;
+}
