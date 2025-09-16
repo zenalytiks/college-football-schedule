@@ -24,7 +24,7 @@ class CFBGuideApp:
         self.app = dash.Dash(
             __name__,
             external_stylesheets=[dbc.themes.BOOTSTRAP],
-            meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=0.5"}],
+            meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=0.3"}],
             url_base_pathname='/college-football-schedule/'
         )
         self.server = self.app.server
