@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Set paths - UPDATE THESE WITH YOUR ACTUAL PATHS
-APP_DIR="./"
-VENV_DIR="./venv"
+APP_DIR="/root/college-football-schedule"
+VENV_DIR="/root/college-football-schedule/venv"
 LOG_FILE="$APP_DIR/logs/cfbd_data_$(date +%Y%m%d_%H%M%S).log"
 
 # Create logs directory if it doesn't exist
