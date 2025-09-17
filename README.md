@@ -2,4 +2,4 @@
 
 A high-performance web application built with Python/Dash that transforms college football schedules into beautiful, interactive timeline visualizations.
 
-![Demo](https://github.com/user-attachments/assets/86298808-e1ac-49e5-a031-3594803e4e51)
+![College Football Schedule](https://github.com/user-attachments/assets/ab7b8729-421c-4f2d-b239-8e5d5d903349)
