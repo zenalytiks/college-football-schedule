@@ -1,4 +1,4 @@
-# CFB Guide 🏈
+# CFB Schedule 🏈
 
 A high-performance web application built with Python/Dash that transforms college football schedules into beautiful, interactive timeline visualizations.
 
