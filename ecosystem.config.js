@@ -2,24 +2,22 @@ module.exports = {
   apps: [{
     name: 'college-football-schedule',
     script: 'app.py',
-    interpreter: 'python3',
+    interpreter: './venv/bin/python',
+    cwd: './',
     instances: 1,
+    exec_mode: 'fork',
     autorestart: true,
     watch: false,
     max_memory_restart: '1G',
     env: {
-      PYTHON_ENV: 'production',
-      PORT: 8050
+      PYTHONUNBUFFERED: '1',
+      PORT: '8050'
     },
-    error_file: './logs/dash-error.log',
-    out_file: './logs/dash-out.log',
-    log_file: './logs/dash-combined.log',
-    time: true,
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
     merge_logs: true,
     cron_restart: '0 3 * * *',
-    restart_delay: 4000,
-    min_uptime: '10s',
-    max_restarts: 10,
-    kill_timeout: 5000
+    restart_delay: 4000
   }]
 };
