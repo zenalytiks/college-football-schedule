@@ -137,7 +137,9 @@ class CFBGuideApp:
                             html.Br(),
                             html.P("2. Games are grouped by their broadcasting network.",className='m-0'),
                             html.Br(),
-                            html.P("3. Use left and right arrow keys to scroll across the timeline or use right-click to hold and drag the timeline.",className='m-0')
+                            html.P("3. Use left and right arrow keys to scroll across the timeline or use right-click to hold and drag the timeline.",className='m-0'),
+                            html.Br(),
+                            html.P("4. Zoom in and out using the mouse wheel or pinch gestures.",className='m-0'),
                         ],
                         target="tooltip-target",
                     ),
@@ -172,7 +174,6 @@ class CFBGuideApp:
                                 lineHeight=65,
                                 itemHeightRatio=1,
                                 minZoom=10 * 60 * 60 * 1000,
-                                maxZoom=10 * 60 * 60 * 1000,
                                 canMove=False,
                                 canResize=False,
                                 canChangeGroup=False,
@@ -499,6 +500,7 @@ class CFBGuideApp:
                 Output('schedule', 'items'),
                 Output('schedule', 'visibleTimeStart'),
                 Output('schedule', 'visibleTimeEnd'),
+                Output('schedule', 'maxZoom'),
                 Output('schedule', 'customGroupsContent'),
                 Output('schedule', 'customItemsContent'),
                 Output('schedule', 'itemsStyle'),
@@ -506,14 +508,11 @@ class CFBGuideApp:
                 Output('loading-spinner', 'spinner_style')
             ],
             [
-                Input('date-picker', 'date')
-            ],
-            [
-                State('schedule', 'itemClickData'),
-                State('dimensions-store', 'data')
+                Input('date-picker', 'date'),
+                Input('dimensions-store', 'data')
             ]
         )
-        def update_schedule(date_value, click_data, stored_dimensions):
+        def update_schedule(date_value, stored_dimensions):
             start_time = time.time()
             
             # Use stored dimensions or fallback to cached/default dimensions
@@ -574,7 +573,8 @@ class CFBGuideApp:
             return [
                 groups, items,
                 df_filtered['start_time_ms'].min(),
-                df_filtered['start_time_ms'].min() + 10 * 60 * 60 * 1000,
+                df_filtered['end_time_ms'].max(),
+                df_filtered['end_time_ms'].max() - df_filtered['start_time_ms'].min(),
                 custom_groups_content, custom_items_content,
                 custom_styles, custom_styles, {'display': 'none'}
             ]
